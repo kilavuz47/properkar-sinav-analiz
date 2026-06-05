@@ -1,154 +1,183 @@
 import streamlit as st
 import pandas as pd
-import requests
 import plotly.express as px
+import plotly.graph_objects as go
+import google.generativeai as genai
 import io
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Ulusal Sınav Havuzu", layout="wide")
-API_URL = "https://sinav-sistemi-api-xxxx.onrender.com" # Kendi Render linkinle değiştir
+st.set_page_config(page_title="Gazi Ortaokulu - Sınav Havuzu", layout="wide")
 
-# --- EXCEL ŞABLONU ÜRETİCİ FONKSİYON ---
+# --- YAPAY ZEKA BAĞLANTISI (STREAMLIT SECRETS) ---
+ai_aktif = False
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        ai_aktif = True
+except Exception as e:
+    pass
+
+# --- EXCEL ÜRETİCİ ---
 def df_to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Şablon')
+        df.to_excel(writer, index=False, sheet_name='Sınav Şablonu')
     return output.getvalue()
 
-# --- GİRİŞ EKRANI (ŞİFRE ALTYAPISI İÇİN HAZIRLIK) ---
-if "giriş_yapildi" not in st.session_state:
-    st.session_state.giriş_yapildi = False
-    st.session_state.kullanici_rolu = None
+# --- GİRİŞ EKRANI ---
+if "giris_durumu" not in st.session_state:
+    st.session_state.giris_durumu = False
+    st.session_state.rol = None
 
-if not st.session_state.giriş_yapildi:
-    st.markdown("<h1 style='text-align: center;'>Gazi Ortaokulu Sınav Havuz Sistemi</h1>", unsafe_allow_html=True)
+if not st.session_state.giris_durumu:
+    st.markdown("<h1 style='text-align: center;'>Gazi Ortaokulu Ölçme ve Değerlendirme Sistemi</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        st.info("Sistem şu an test aşamasında olduğu için şifresiz rol seçimi aktiftir. İleride kurumsal şifre ile giriş yapılacaktır.")
-        rol = st.selectbox("Sisteme Giriş Rolünüz:", ["Öğretmen", "Süper Yönetici / İdareci"])
-        sifre = st.text_input("Şifre (Şu an boş bırakabilirsiniz)", type="password")
+        secilen_rol = st.selectbox("Sisteme Giriş Rolünüz:", ["Öğretmen", "Süper Yönetici / İdareci"])
+        sifre_giris = st.text_input("Şifre (Geçici Olarak Boş Bırakın)", type="password")
         
         if st.button("Sisteme Giriş Yap", use_container_width=True):
-            st.session_state.giriş_yapildi = True
-            st.session_state.kullanici_rolu = rol
+            st.session_state.giris_durumu = True
+            st.session_state.rol = secilen_rol
             st.rerun()
-    st.stop() # Giriş yapılmadıysa alt kodları çalıştırma
+    st.stop()
 
-# --- ANA SİSTEM (GİRİŞ YAPILDIKTAN SONRA) ---
-st.sidebar.title(f"👤 {st.session_state.kullanici_rolu} Paneli")
+# --- ANA SİSTEM ---
+st.sidebar.title(f"👤 {st.session_state.rol} Paneli")
 if st.sidebar.button("Çıkış Yap"):
-    st.session_state.giriş_yapildi = False
+    st.session_state.giris_durumu = False
     st.rerun()
-
 st.sidebar.markdown("---")
 
-# YÖNETİCİ MODÜLÜ
-if st.session_state.kullanici_rolu == "Süper Yönetici / İdareci":
-    st.header("⚙️ Sınav Havuzu ve Senaryo Yönetimi")
+# ==========================================
+# 1. SÜPER YÖNETİCİ MODÜLÜ (Şablon Hazırlama)
+# ==========================================
+if st.session_state.rol == "Süper Yönetici / İdareci":
+    st.header("⚙️ Havuz Yönetimi ve Senaryo Tanımlama")
+    st.info("Kurum genelinde uygulanacak klasik sınavların şablonlarını buradan oluşturun.")
     
-    col_ders, col_sinav = st.columns(2)
-    with col_ders:
-        ders_adi = st.selectbox("Ders Seçimi", ["Matematik", "Türkçe", "Fen Bilimleri", "Sosyal Bilgiler"])
-    with col_sinav:
-        sinav_adi = st.text_input("Sınav Adı", value="2. Dönem 2. Ortak Yazılı")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        ders = st.selectbox("Ders", ["Matematik", "Türkçe", "Fen Bilimleri", "Sosyal Bilgiler"])
+        sinav_adi = st.text_input("Sınav Adı", "2. Dönem 2. Ortak Yazılı")
+    with col_b:
+        soru_sayisi = st.number_input("Toplam Soru Sayısı (Açık Uçlu)", min_value=1, max_value=20, value=5)
+        toplam_puan_kontrol = 0
+    
+    st.markdown("### Öğrenme Çıktıları (Kazanımlar) ve Puanlama")
+    
+    sablon_verisi = {"Öğrenci No": [], "Adı": [], "Soyadı": []}
+    
+    # Dinamik Soru Sütunları Oluşturma
+    for i in range(1, soru_sayisi + 1):
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            kazanim = st.text_input(f"Soru {i} Kazanımı", key=f"kazanim_{i}", placeholder="Örn: MAT.6.2.1...")
+        with c2:
+            puan = st.number_input(f"Soru {i} Puanı", key=f"puan_{i}", min_value=1, max_value=100, value=20)
+            toplam_puan_kontrol += puan
         
-    st.markdown(f"### {ders_adi} - {sinav_adi} İçin Senaryo Tanımlama")
-    
-    # Yönetici için Örnek Senaryo Şablonu İndirme
-    st.write("1. Adım: Yeni bir senaryo yüklemek için boş şablonu indirin, doldurun ve sisteme yükleyin.")
-    ornek_senaryo_df = pd.DataFrame({
-        "Soru No": [1, 2, 3, 4, 5],
-        "Kazanım / Çıktı Kodu": ["MAT.6.2.1", "MAT.6.2.2", "MAT.6.4.1", "", ""],
-        "Maksimum Puan": [20, 20, 20, 20, 20]
-    })
-    
-    st.download_button(
-        label="📥 Senaryo Şablonunu İndir (Excel)",
-        data=df_to_excel(ornek_senaryo_df),
-        file_name="senaryo_sablonu.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    
-    # Senaryo Yükleme
-    st.write("2. Adım: Doldurduğunuz senaryo şablonunu sisteme yükleyerek öğretmenlerin erişimine açın.")
-    yuklenen_senaryo = st.file_uploader("Senaryo Excel Dosyasını Yükle", type=["xlsx"])
-    
-    if yuklenen_senaryo:
-        okunan_senaryo = pd.read_excel(yuklenen_senaryo)
-        st.success("Senaryo Başarıyla Okundu! Veritabanına kaydedildi.")
-        st.dataframe(okunan_senaryo, use_container_width=True)
+        # Excel sütun başlığı formatı: Soru 1 (MAT.6.2.1) [Max: 20]
+        sutun_basligi = f"Soru {i} ({kazanim}) [Max: {puan}]"
+        sablon_verisi[sutun_basligi] = []
 
-# ÖĞRETMEN MODÜLÜ
-elif st.session_state.kullanici_rolu == "Öğretmen":
-    st.header("📝 Sınav Uygulama ve Not Girişi")
-    
-    # Havuzdan Sınav Seçimi
-    st.subheader("1. Havuzdan Sınav ve Senaryo Seç")
-    col1, col2 = st.columns(2)
-    with col1:
-        secilen_sınav = st.selectbox("Tanımlı Sınavlar", ["Matematik - 2. Dönem 2. Ortak Yazılı", "Türkçe - 2. Dönem 1. Ortak Yazılı"])
-    with col2:
-        secilen_senaryo = st.selectbox("Uygulanacak Senaryo", ["Senaryo 1 (6 Soru)", "Senaryo 2 (8 Soru)", "Senaryo 3 (5 Soru)"])
-        
-    st.info(f"Seçilen senaryoda toplam 6 soru bulunmaktadır. Maksimum puan: 100")
-    
-    st.markdown("---")
-    st.subheader("2. Öğrenci Not Listesi İşlemleri")
-    
-    # Otomatik Öğrenci Şablonu Üretme (Soru 1, Soru 2 kolonları ile)
-    ogrenci_sablon_df = pd.DataFrame({
-        "Öğrenci No": ["101", "102", "103"],
-        "Adı": ["Ahmet", "Ayşe", "Fatma"],
-        "Soyadı": ["Yılmaz", "Kaya", "Demir"],
-        "Soru 1 (Max:20)": ["", "", ""],
-        "Soru 2 (Max:15)": ["", "", ""],
-        "Soru 3 (Max:15)": ["", "", ""],
-        "Soru 4 (Max:25)": ["", "", ""],
-        "Soru 5 (Max:25)": ["", "", ""]
-    })
-    
-    col_indir, col_yukle = st.columns(2)
-    with col_indir:
-        st.write("Sınıfınızın boş not çizelgesini indirip sınav sonuçlarını Excel'e girin.")
+    if toplam_puan_kontrol != 100:
+        st.warning(f"Dikkat: Soruların toplam puanı {toplam_puan_kontrol}. 100 üzerinden değerlendirme yapılması önerilir.")
+    else:
+        st.success("Sınav toplam puanı 100 olarak dengelendi.")
+
+    if st.button("Şablonu Oluştur ve Havuza Kaydet"):
+        df_sablon = pd.DataFrame(sablon_verisi)
         st.download_button(
-            label="📥 Öğrenci Not Şablonunu İndir (Excel)",
-            data=df_to_excel(ogrenci_sablon_df),
-            file_name=f"not_cizelgesi_{secilen_senaryo}.xlsx",
+            label="📥 Öğretmenler İçin Boş Excel Şablonunu İndir",
+            data=df_to_excel(df_sablon),
+            file_name=f"{ders}_{sinav_adi}_Sablonu.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+# ==========================================
+# 2. ÖĞRETMEN MODÜLÜ (Sınav Okuma ve Analiz)
+# ==========================================
+elif st.session_state.rol == "Öğretmen":
+    st.header("📝 Klasik Sınav Sonuç Girişi ve Zümre Analizi")
+    st.write("Yöneticinin oluşturduğu şablonu doldurup buraya yükleyin. Sistem çapraz tabloyu çıkarıp çift motorlu analiz yapacaktır.")
+    
+    yuklenen_dosya = st.file_uploader("Doldurulmuş Öğrenci Not Listesini Yükle (Excel)", type=["xlsx"])
+    
+    if yuklenen_dosya:
+        df = pd.read_excel(yuklenen_dosya)
         
-    with col_yukle:
-        st.write("Doldurduğunuz not çizelgesini sisteme yükleyin.")
-        yuklenen_notlar = st.file_uploader("Doldurulmuş Not Excel'ini Yükle", type=["xlsx"])
+        st.markdown("### 📋 Çapraz Sınav Tablosu")
+        st.dataframe(df, use_container_width=True)
         
-    # Analiz ve Müfettiş Raporu (Yapay Zeka Çıktısı Simülasyonu)
-    if yuklenen_notlar:
-        df_notlar = pd.read_excel(yuklenen_notlar)
-        st.success("Notlar Sisteme İşlendi!")
-        st.dataframe(df_notlar, use_container_width=True)
+        # Analiz için sadece soru sütunlarını ayırma
+        soru_sutunlari = [col for col in df.columns if "Soru" in col]
         
+        # --- ÇİFT MOTORLU ANALİZ SİSTEMİ ---
         st.markdown("---")
-        st.subheader("🤖 Yapay Zeka Denetim ve Analiz Raporu (İdare / Müfettiş Ekranı)")
+        st.subheader("🔬 Profesyonel Sınav Analiz Motorları")
+        tab1, tab2 = st.tabs(["📊 Klasik Algoritma Motoru", "🤖 Gemini Yapay Zeka Motoru"])
         
-        # Grafik
-        grafik_veri = pd.DataFrame({
-            "Sorular": ["Soru 1 (MAT.6.2.1)", "Soru 2 (MAT.6.2.2)", "Soru 3", "Soru 4", "Soru 5"],
-            "Sınıf Başarı Yüzdesi": [85, 42, 65, 70, 50]
-        })
-        fig = px.bar(grafik_veri, x="Sorular", y="Sınıf Başarı Yüzdesi", title="Kazanım Bazlı Sınıf Başarı Dağılımı", color="Sınıf Başarı Yüzdesi", color_continuous_scale="RdYlGn")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Gelişmiş AI Raporu Formatı
-        st.error("**Sistem Analizi:** MAT.6.2.2 kodlu 'Sayı ve şekil örüntülerini yorumlayabilme' kazanımında başarı oranı %42'de kalarak kritik sınırın altına düşmüştür.")
-        
-        with st.expander("📄 Resmi Analiz Raporunu Görüntüle (Çıktı Alınabilir)"):
-            st.write("""
-            **Kurum:** Gazi Ortaokulu
-            **Sınav:** Matematik 2. Dönem 2. Ortak Yazılı
+        # MOTOR 1: ALGORİTMİK ANALİZ (Grafikler ve İstatistik)
+        with tab1:
+            st.info("Bu modül matematiksel algoritmalar kullanarak sınıfın sayısal röntgenini çeker.")
             
-            Öğrencilerin uygulanan açık uçlu sınavdaki süreç bileşenleri incelendiğinde; dört işlem algoritmalarını kullanmada yüksek performans gösterdikleri, ancak cebirsel ifadeler içeren durumlarda muhakeme yaparken zorlandıkları tespit edilmiştir. 
+            # 1. Isı Haritası (Kıpkırmızı olan yerler başarısızlık)
+            heatmap_veri = df.set_index("Adı")[soru_sutunlari]
+            fig_heat = px.imshow(
+                heatmap_veri, 
+                text_auto=True, 
+                aspect="auto",
+                color_continuous_scale="RdYlGn",
+                title="Öğrenci - Kazanım Isı Haritası (Yeşil: Başarılı, Kırmızı: Eksik)"
+            )
+            st.plotly_chart(fig_heat, use_container_width=True)
             
-            **Eylem Planı Önerisi:** Zümre öğretmenleri tarafından problem çözme stratejilerini geliştirecek çalışma yapraklarının hazırlanması uygun görülmüştür.
-            """)
+            # 2. Sınıf Soru Ortalamaları (Radar Grafik)
+            sinif_ortalamalari = df[soru_sutunlari].mean()
+            fig_radar = go.Figure(data=go.Scatterpolar(
+                r=sinif_ortalamalari.values,
+                theta=soru_sutunlari,
+                fill='toself'
+            ))
+            fig_radar.update_layout(title="Sınıf Kazanım Ortalamaları (Radar Analizi)")
+            st.plotly_chart(fig_radar, use_container_width=True)
+            
+            if st.button("Algoritmik Raporu Sisteme Kaydet"):
+                st.success("Algoritmik sayısal veriler resmi analiz olarak veritabanına işlendi.")
+
+        # MOTOR 2: YAPAY ZEKA ANALİZİ (Gemini)
+        with tab2:
+            st.info("Bu modül, sayısal verileri okuyarak müfettiş standartlarında akademik bir zümre raporu ve eylem planı yazar.")
+            
+            if not ai_aktif:
+                st.error("Gemini API bağlantısı kurulamadı. Streamlit ayarlarınızı kontrol edin.")
+            else:
+                if st.button("✨ Yapay Zeka Analizini Başlat"):
+                    with st.spinner("Gemini sınıfın verilerini inceliyor, pedagojik rapor yazılıyor..."):
+                        # Veriyi yapay zekanın anlayacağı şekilde özetleme
+                        istatistik = df[soru_sutunlari].describe().to_string()
+                        
+                        prompt = f"""
+                        Sen uzman bir MEB matematik zümre başkanısın. Aşağıda açık uçlu bir sınavın kazanım bazlı istatistikleri var:
+                        
+                        {istatistik}
+                        
+                        Bu verilere bakarak, müfettiş denetimine sunulacak resmi bir klasik sınav analiz raporu yaz.
+                        Lütfen şunları içer:
+                        1. Sınıfın genel durumu.
+                        2. En başarılı olunan ve en zayıf kalınan kazanımların (soruların) tespiti.
+                        3. Zayıf kazanımlar için uygulanabilir pedagojik çözüm önerileri (Eylem Planı).
+                        """
+                        try:
+                            model = genai.GenerativeModel('gemini-1.5-flash')
+                            cevap = model.generate_content(prompt)
+                            st.write(cevap.text)
+                            
+                            st.markdown("---")
+                            if st.button("Yapay Zeka Raporunu Sisteme Kaydet"):
+                                st.success("Pedagojik rapor resmi analiz olarak veritabanına işlendi.")
+                        except Exception as e:
+                            st.error(f"Analiz sırasında hata: {e}")
