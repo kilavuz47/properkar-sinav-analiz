@@ -5,7 +5,7 @@ import requests
 st.set_page_config(page_title="Süper Yönetici - Sınav Analiz", layout="wide")
 
 # Backend API Adresi (Şu an lokalde çalışıyoruz)
-API_URL = "http://127.0.0.1:8000"
+API_URL = "https://properkar-sinav-analiz.onrender.com"
 
 st.title("📊 Klasik Sınav Analiz ve Havuz Sistemi")
 st.markdown("---")
