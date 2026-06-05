@@ -4,7 +4,9 @@ import requests
 import plotly.express as px
 
 st.set_page_config(page_title="Gelişmiş Sınav Analiz Platformu", layout="wide")
-API_URL = "http://127.0.0.1:8000"
+
+# Render üzerindeki canlı API adresin buraya gelmeli
+API_URL = "https://sinav-sistemi-api-xxxx.onrender.com" # BURAYI KENDİ RENDER LİNKİNLE DEĞİŞTİRMEYİ UNUTMA
 
 st.title("📊 Ulusal Klasik Sınav Analiz ve Havuz Sistemi")
 st.markdown("---")
@@ -26,7 +28,7 @@ if menu == "Süper Yönetici: Şablon Yükle":
     with col2:
         st.write("**Öğrenme Çıktıları (Kazanımlar) Eşleştirmesi**")
         kazanim_dict = {}
-        # PDF'deki Senaryo 1'e göre varsayılan kazanımlar
+        # 6. Sınıf Matematik Senaryo 1 varsayılan kazanımları
         varsayilanlar = ["MAT.6.2.1", "MAT.6.2.2", "MAT.6.2.3", "MAT.6.4.1", "MAT.6.4.2", "MAT.6.4.3"]
         
         for i in range(1, soru_sayisi + 1):
@@ -34,21 +36,20 @@ if menu == "Süper Yönetici: Şablon Yükle":
             kazanim_dict[f"Soru {i}"] = st.text_input(f"Soru {i} Kazanımı", value=varsayilan)
             
     if st.button("Senaryoyu Havuza Kaydet"):
-        st.success(f"{senaryo_adi} başarıyla Türkiye geneli havuza eklendi!")
-        st.json(kazanim_dict) # API'ye JSON olarak gidecek kısım
+        st.success(f"'{senaryo_adi}' başarıyla Türkiye geneli havuza eklendi!")
+        st.json(kazanim_dict)
 
 elif menu == "Hiyerarşik Analiz (İl/İlçe/Okul)":
     st.header("📈 Bölgesel ve Kurumsal Başarı Karşılaştırması")
     
-    # Filtreleme Hiyerarşisi
     col1, col2, col3 = st.columns(3)
     secilen_il = col1.selectbox("İl Seçiniz", ["Tüm Türkiye", "Mardin", "Diyarbakır", "Şırnak"])
-    secilen_ilce = col2.selectbox("İlçe Seçiniz", ["Tümü", "Dargeçit", "Artuklu", "Midiyat"])
+    secilen_ilce = col2.selectbox("İlçe Seçiniz", ["Tümü", "Dargeçit", "Artuklu", "Midyat"])
     secilen_okul = col3.selectbox("Okul Seçiniz", ["Tümü", "Gazi Ortaokulu", "Atatürk Ortaokulu"])
     
     st.markdown("### 🎯 Öğrenme Çıktısı (Kazanım) Bazlı Analiz")
     
-    # Gelişmiş Grafik Simülasyonu (Pandas ve Plotly ile)
+    # Gelişmiş Grafik Simülasyonu
     veri = {
         "Kazanım": ["MAT.6.2.1 (Cebirsel İfadeler)", "MAT.6.2.2 (Örüntüler)", "MAT.6.4.1 (Alan Ölçme)", "MAT.6.4.3 (Geometrik Problem)"],
         "İl Ortalaması (%)": [65, 70, 55, 45],
@@ -57,7 +58,6 @@ elif menu == "Hiyerarşik Analiz (İl/İlçe/Okul)":
     }
     df = pd.DataFrame(veri)
     
-    # Plotly ile etkileşimli bar grafiği
     fig = px.barmart(
         df, 
         x="Kazanım", 
@@ -67,8 +67,6 @@ elif menu == "Hiyerarşik Analiz (İl/İlçe/Okul)":
         color_discrete_sequence=["#1f77b4", "#ff7f0e", "#2ca02c"]
     )
     st.plotly_chart(fig, use_container_width=True)
-    
-    st.warning("💡 **Yapay Zeka Yorumu:** Okulunuzun ortalaması il ve ilçe genelinin üzerindedir. Ancak MAT.6.4.3 numaralı Geometrik şekillerin alanları ile problem çözebilme [cite: 80, 83] konusunda bölge genelinde bir düşüş yaşanmaktadır. Bu öğrenme çıktısı için ek materyal hazırlanması önerilir.")
 
 elif menu == "Öğretmen: Sonuç Girişi":
     st.header("📝 Sınıf Sınav Verisi Yükleme (Toplu)")
@@ -77,7 +75,7 @@ elif menu == "Öğretmen: Sonuç Girişi":
     uploaded_file = st.file_uploader("Sınav Sonuçları Excel Dosyası Seçin", type=["xlsx", "xls", "csv"])
     if uploaded_file is not None:
         try:
-            df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('xls') or uploaded_file.name.endswith('xlsx') else pd.read_csv(uploaded_file)
+            df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('xls', 'xlsx')) else pd.read_csv(uploaded_file)
             st.write("Yüklenen Veri Önizlemesi:")
             st.dataframe(df.head())
             if st.button("Verileri Veritabanına İşle"):
