@@ -7,3 +7,5 @@ supabase
 streamlit
 pydantic
 requests
+pandas
+plotly
