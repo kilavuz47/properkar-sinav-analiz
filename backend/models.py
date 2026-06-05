@@ -11,8 +11,8 @@ class School(Base):
 class ExamScenario(Base):
     __tablename__ = "exam_scenarios"
     id = Column(Integer, primary_key=True, index=True)
-    isim = Column(String) # Örn: 6. Sınıf Mat - 2. Dönem 2. Sınav - Senaryo 1
-    kazanimlar = Column(JSON) # JSON formatında: {"Soru 1": "MAT.6.2.1", "Soru 2": "MAT.6.2.2"}
+    isim = Column(String) 
+    kazanimlar = Column(JSON) 
 
 class DetailedExamResult(Base):
     __tablename__ = "detailed_results"
@@ -20,5 +20,5 @@ class DetailedExamResult(Base):
     student_no = Column(String, index=True)
     scenario_id = Column(Integer, ForeignKey("exam_scenarios.id"))
     school_id = Column(Integer, ForeignKey("schools.id"))
-    soru_puanlari = Column(JSON) # {"Soru 1": 10, "Soru 2": 5, "Soru 3": 10}
+    soru_puanlari = Column(JSON) 
     toplam_puan = Column(Float)
