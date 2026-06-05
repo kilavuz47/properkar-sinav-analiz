@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, JSON
 from backend.database import Base
 
 class School(Base):
@@ -8,18 +8,17 @@ class School(Base):
     ilce = Column(String, index=True)
     okul_adi = Column(String)
 
-class User(Base):
-    __tablename__ = "users"
+class ExamScenario(Base):
+    __tablename__ = "exam_scenarios"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    role = Column(String) # super_admin, il_admin, okul_admin, ogretmen
-    school_id = Column(Integer, ForeignKey("schools.id"), nullable=True)
+    isim = Column(String) # Örn: 6. Sınıf Mat - 2. Dönem 2. Sınav - Senaryo 1
+    kazanimlar = Column(JSON) # JSON formatında: {"Soru 1": "MAT.6.2.1", "Soru 2": "MAT.6.2.2"}
 
-class ExamResult(Base):
-    __tablename__ = "exam_results"
+class DetailedExamResult(Base):
+    __tablename__ = "detailed_results"
     id = Column(Integer, primary_key=True, index=True)
     student_no = Column(String, index=True)
-    scenario = Column(String) # Örn: 6. Sınıf Matematik Senaryo 2
-    score = Column(Float)
-    ai_feedback = Column(String)
+    scenario_id = Column(Integer, ForeignKey("exam_scenarios.id"))
     school_id = Column(Integer, ForeignKey("schools.id"))
+    soru_puanlari = Column(JSON) # {"Soru 1": 10, "Soru 2": 5, "Soru 3": 10}
+    toplam_puan = Column(Float)
